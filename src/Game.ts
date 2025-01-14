@@ -65,7 +65,6 @@ export class Game {
             score: 0,
             isGameOver: false,
             shapes: [],
-            placedShapesCount: 0,
             isAIEnabled: false
         };
 
@@ -249,19 +248,8 @@ export class Game {
         // 如果游戏已经结束，不再生成新形状
         if (this.state.isGameOver) return;
 
-        // 清除现有的形状
-        this.state.shapes.forEach(shape => {
-            gsap.to(shape.container, {
-                alpha: 0,
-                duration: 0.2,
-                onComplete: () => {
-                    this.shapeContainer.removeChild(shape.container);
-                }
-            });
-        });
-
-        this.state.shapes = [];
-        this.state.placedShapesCount = 0;
+        // 如果还有现有形状，不生成新的
+        if (this.state.shapes.length > 0) return;
 
         // 生成3个新形状
         for (let i = 0; i < 3; i++) {
@@ -486,10 +474,9 @@ export class Game {
             
             // 检查并清除完整的行和列
             this.checkLines();
-            this.state.placedShapesCount++;
 
-            // 如果所有形状都已放置，生成新的形状
-            if (this.state.placedShapesCount >= 3) {
+            // 如果所有形状都已放置或没有剩余形状，生成新的形状
+            if (this.state.shapes.length === 0) {
                 this.generateNewShapes();
             }
         } else {
@@ -1131,12 +1118,9 @@ export class Game {
                 });
             });
 
-            if (!this.state.isAIEnabled) return;
-
             // 放置形状
             this.placeShape(bestMove.row, bestMove.col, bestShape);
             this.checkLines();
-            this.state.placedShapesCount++;
             
             // 移除已放置的形状
             const index = this.state.shapes.indexOf(bestShape);
@@ -1145,8 +1129,8 @@ export class Game {
                 this.shapeContainer.removeChild(bestShape.container);
             }
 
-            // 如果所有形状都已放置，生成新的形状
-            if (this.state.placedShapesCount >= 3) {
+            // 如果所有形状都已放置或没有剩余形状，生成新的形状
+            if (this.state.shapes.length === 0) {
                 this.generateNewShapes();
             }
 

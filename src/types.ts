@@ -69,8 +69,6 @@ export interface GameState {
     isGameOver: boolean;
     /** 当前可用的形状列表 */
     shapes: Shape[];
-    /** 已放置的形状数量 */
-    placedShapesCount: number;
     /** AI模式是否启用 */
     isAIEnabled: boolean;
 } 
