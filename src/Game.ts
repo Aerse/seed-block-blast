@@ -7,6 +7,7 @@ import { StartScreen } from './screens/StartScreen';
 import { PauseScreen } from './screens/PauseScreen';
 import { SettingsButton } from './ui/SettingsButton';
 import { UIButton } from './ui/UIButton';
+import { ParticleSystem } from './effects/ParticleSystem';
 
 interface GameStateInterface {
     score: number;
@@ -30,20 +31,10 @@ export class Game {
     private uiContainer: PIXI.Container;
     private menuContainer: PIXI.Container;
     private scoreText?: PIXI.Text;
-    private particles: Array<{
-        sprite: PIXI.DisplayObject;
-        vx: number;
-        vy: number;
-        rotation: number;
-        life: number;
-        curve: number;
-        maxLife: number;
-    }> = [];
-    private particleContainer: PIXI.Container;
-    private particleTexture: PIXI.Texture;
     private gameAI!: GameAI;
     private startScreen: StartScreen;
     private pauseScreen: PauseScreen;
+    private particleSystem: ParticleSystem;
 
     constructor() {
         // 获取设备像素比
@@ -66,7 +57,6 @@ export class Game {
         document.getElementById('game-container')?.appendChild(view);
 
         // 创建容器
-        this.particleContainer = new PIXI.Container();
         this.boardContainer = new PIXI.Container();
         this.shapeContainer = new PIXI.Container();
         this.uiContainer = new PIXI.Container();
@@ -77,14 +67,13 @@ export class Game {
         this.app.stage.hitArea = new PIXI.Rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
         this.app.stage.addChild(this.boardContainer);
-        this.app.stage.addChild(this.particleContainer);
         this.app.stage.addChild(this.shapeContainer);
         this.app.stage.addChild(this.uiContainer);
         this.app.stage.addChild(this.menuContainer);
 
         // 初始化粒子系统
-        this.particles = [];
-        this.particleTexture = PIXI.Texture.WHITE;
+        this.particleSystem = new ParticleSystem();
+        this.app.stage.addChild(this.particleSystem.getContainer());
 
         this.state = {
             score: 0,
@@ -119,7 +108,7 @@ export class Game {
         this.menuContainer.addChild(this.pauseScreen);
 
         // 添加动画循环
-        this.app.ticker.add(this.updateParticles.bind(this));
+        this.app.ticker.add(this.particleSystem.update.bind(this.particleSystem));
     }
 
     /**
@@ -168,16 +157,9 @@ export class Game {
         this.boardContainer.removeChildren();
         this.shapeContainer.removeChildren();
         this.uiContainer.removeChildren();
-        this.particleContainer.removeChildren();
 
         // 清除所有粒子
-        this.particles.forEach(particle => {
-            if (particle.sprite.parent) {
-                particle.sprite.parent.removeChild(particle.sprite);
-            }
-            particle.sprite.destroy();
-        });
-        this.particles = [];
+        this.particleSystem.clear();
 
         // 显示开始界面
         this.startScreen.show();
@@ -750,6 +732,13 @@ export class Game {
      */
     private clearBlock(block: Block): void {
         if (block.sprite.parent) {
+            // 创建粒子效果
+            this.particleSystem.createEffect(
+                block.sprite.x + BLOCK_SIZE / 2,
+                block.sprite.y + BLOCK_SIZE / 2,
+                block.color
+            );
+
             block.sprite.parent.removeChild(block.sprite);
             block.sprite.destroy();
         }
@@ -808,7 +797,7 @@ export class Game {
                 ease: "none",
                 onComplete: () => {
                     // 创建粒子效果
-                    this.createParticleEffect(
+                    this.particleSystem.createEffect(
                         block.sprite.x + BLOCK_SIZE / 2,
                         block.sprite.y + BLOCK_SIZE / 2,
                         block.color
@@ -898,219 +887,6 @@ export class Game {
             this.previewGraphics.destroy();
             this.previewGraphics = null;
         }
-    }
-
-    /**
-     * 更新粒子效果
-     * @param delta - 帧间隔时间
-     */
-    private updateParticles(delta: number): void {
-        for (let i = this.particles.length - 1; i >= 0; i--) {
-            const particle = this.particles[i];
-            particle.life -= 0.025 * delta; // 加快生命消耗
-
-            if (particle.life <= 0) {
-                if (particle.sprite.parent) {
-                    particle.sprite.parent.removeChild(particle.sprite);
-                }
-                particle.sprite.destroy();
-                this.particles.splice(i, 1);
-                continue;
-            }
-
-            // 更新位置，添加曲线运动
-            particle.sprite.x += particle.vx * delta * 1.2; // 加快水平移动
-            particle.sprite.y += particle.vy * delta * 1.2; // 加快垂直移动
-            particle.sprite.x += particle.curve * Math.sin(particle.life * 8) * delta; // 加快曲线频率
-            particle.vy += 0.2 * delta; // 增加重力效果
-
-            // 旋转效果
-            particle.sprite.rotation += particle.rotation * delta * 1.2;
-
-            // 使用生命值比例来创建更平滑的缩放和透明度过渡
-            const lifeRatio = particle.life / particle.maxLife;
-            const easeRatio = this.easeOutQuad(lifeRatio);
-
-            particle.sprite.alpha = easeRatio;
-            particle.sprite.scale.set(easeRatio * 0.8);
-        }
-    }
-
-    /**
-     * 创建粒子特效
-     * @param x - 特效的X坐标
-     * @param y - 特效的Y坐标
-     * @param color - 粒子的颜色
-     */
-    private createParticleEffect(x: number, y: number, color: number): void {
-        const particleCount = 25; // 减少粒子数量以提高性能
-        const glowColor = color;
-
-        // 创建爆炸波
-        const blast = new PIXI.Graphics();
-        blast.beginFill(color, 0.3);
-        blast.drawCircle(0, 0, 5);
-        blast.endFill();
-        blast.x = x;
-        blast.y = y;
-        this.particleContainer.addChild(blast);
-
-        // 加快爆炸波动画
-        gsap.to(blast.scale, {
-            x: 8,
-            y: 8,
-            duration: 0.3,
-            ease: "power2.out",
-            onComplete: () => {
-                if (blast.parent) {
-                    blast.parent.removeChild(blast);
-                }
-                blast.destroy();
-            }
-        });
-        gsap.to(blast, {
-            alpha: 0,
-            duration: 0.3,
-            ease: "power2.out"
-        });
-
-        for (let i = 0; i < particleCount; i++) {
-            const particle = new PIXI.Graphics();
-
-            // 随机选择粒子形状
-            const shapeType = Math.random();
-            if (shapeType < 0.3) {
-                // 圆形粒子
-                particle.beginFill(color, 0.9);
-                particle.drawCircle(0, 0, 2);
-                particle.endFill();
-                // 添加发光效果
-                particle.beginFill(glowColor, 0.4);
-                particle.drawCircle(0, 0, 4);
-                particle.endFill();
-            } else if (shapeType < 0.6) {
-                // 星形粒子
-                particle.beginFill(color, 0.9);
-                this.drawStar(particle, 0, 0, 5, 3, 1.5);
-                particle.endFill();
-                // 添加发光效果
-                particle.beginFill(glowColor, 0.4);
-                this.drawStar(particle, 0, 0, 5, 5, 2.5);
-                particle.endFill();
-            } else {
-                // 菱形粒子
-                particle.beginFill(color, 0.9);
-                particle.moveTo(0, -3);
-                particle.lineTo(3, 0);
-                particle.lineTo(0, 3);
-                particle.lineTo(-3, 0);
-                particle.closePath();
-                particle.endFill();
-                // 添加发光效果
-                particle.beginFill(glowColor, 0.4);
-                particle.moveTo(0, -5);
-                particle.lineTo(5, 0);
-                particle.lineTo(0, 5);
-                particle.lineTo(-5, 0);
-                particle.closePath();
-                particle.endFill();
-            }
-
-            particle.x = x;
-            particle.y = y;
-
-            // 创建更快的运动轨迹
-            const angle = (Math.random() * Math.PI * 2);
-            const speed = 3 + Math.random() * 5; // 增加速度
-            const curve = (Math.random() - 0.5) * 3; // 增加曲线幅度
-            const scale = 0.5 + Math.random() * 0.8;
-            particle.scale.set(scale);
-
-            const particle_obj = {
-                sprite: particle,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed - 4, // 增加向上的初始速度
-                curve: curve,
-                rotation: (Math.random() - 0.5) * 0.6, // 增加旋转速度
-                life: 0.8 + Math.random() * 0.4, // 减少生命周期
-                maxLife: 0.8 + Math.random() * 0.4
-            };
-
-            this.particles.push(particle_obj);
-            this.particleContainer.addChild(particle);
-        }
-    }
-
-    /**
-     * 绘制星形
-     * @param graphics - PIXI图形对象
-     * @param x - 中心X坐标
-     * @param y - 中心Y坐标
-     * @param points - 星形的角数
-     * @param radius - 外圆半径
-     * @param innerRadius - 内圆半径
-     */
-    private drawStar(graphics: PIXI.Graphics, x: number, y: number, points: number, radius: number, innerRadius: number): void {
-        const step = Math.PI * 2 / points;
-        const halfStep = step / 2;
-        const start = -Math.PI / 2;
-
-        graphics.moveTo(
-            x + Math.cos(start) * radius,
-            y + Math.sin(start) * radius
-        );
-
-        for (let i = 1; i <= points * 2; i++) {
-            const r = i % 2 === 0 ? radius : innerRadius;
-            const angle = start + (i * halfStep);
-            graphics.lineTo(
-                x + Math.cos(angle) * r,
-                y + Math.sin(angle) * r
-            );
-        }
-    }
-
-    /**
-     * 绘制心形
-     * @param graphics - PIXI图形对象
-     * @param x - 中心X坐标
-     * @param y - 中心Y坐标
-     * @param size - 心形大小
-     */
-    private drawHeart(graphics: PIXI.Graphics, x: number, y: number, size: number): void {
-        const bezierPoints = [
-            { x: x, y: y - size * 0.5 },
-            { x: x - size, y: y - size },
-            { x: x - size, y: y },
-            { x: x, y: y + size },
-            { x: x + size, y: y },
-            { x: x + size, y: y - size },
-            { x: x, y: y - size * 0.5 }
-        ];
-
-        graphics.moveTo(bezierPoints[0].x, bezierPoints[0].y);
-
-        for (let i = 0; i < bezierPoints.length - 2; i += 2) {
-            const xc = (bezierPoints[i + 1].x + bezierPoints[i + 2].x) / 2;
-            const yc = (bezierPoints[i + 1].y + bezierPoints[i + 2].y) / 2;
-            graphics.quadraticCurveTo(
-                bezierPoints[i + 1].x,
-                bezierPoints[i + 1].y,
-                xc,
-                yc
-            );
-        }
-
-        graphics.closePath();
-    }
-
-    /**
-     * 缓动函数 - easeOutQuad
-     * @param t - 时间比例 (0-1)
-     * @returns 缓动后的值
-     */
-    private easeOutQuad(t: number): number {
-        return t * (2 - t);
     }
 
     /**
