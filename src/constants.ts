@@ -99,3 +99,13 @@ export const SHAPES = [
     [[true, true, false],
      [false, true, true]]
 ]; 
+
+/**
+ * 游戏状态枚举
+ */
+export enum GameState {
+    START = 'START',
+    PLAYING = 'PLAYING',
+    PAUSED = 'PAUSED',
+    GAME_OVER = 'GAME_OVER'
+} 

@@ -3,16 +3,26 @@ import { Block, DraggableContainer, GameState, Shape } from './types';
 import { BLOCK_COLORS, BLOCK_SIZE, BOARD_OFFSET_X, BOARD_OFFSET_Y, GAME_HEIGHT, GAME_WIDTH, GRID_SIZE, SHAPES, SHAPES_AREA } from './constants';
 import gsap from 'gsap';
 
+interface GameStateInterface {
+    score: number;
+    isGameOver: boolean;
+    shapes: Shape[];
+    isAIEnabled: boolean;
+    currentState: string;
+}
+
 /**
  * 方块消除游戏的主类
  * 负责管理游戏的核心逻辑、渲染和交互
  */
 export class Game {
     private app: PIXI.Application;
-    private gameBoard: Block[][];
-    private state: GameState;
+    private gameBoard: Block[][] = [];
+    private state: GameStateInterface;
     private boardContainer: PIXI.Container;
     private shapeContainer: PIXI.Container;
+    private uiContainer: PIXI.Container;
+    private menuContainer: PIXI.Container;
     private scoreText?: PIXI.Text;
     private particles: Array<{
         sprite: PIXI.DisplayObject;
@@ -20,6 +30,8 @@ export class Game {
         vy: number;
         rotation: number;
         life: number;
+        curve: number;
+        maxLife: number;
     }> = [];
     private particleContainer: PIXI.Container;
     private particleTexture: PIXI.Texture;
@@ -44,10 +56,12 @@ export class Game {
 
         document.getElementById('game-container')?.appendChild(view);
 
-        // 创建粒子容器
+        // 创建容器
         this.particleContainer = new PIXI.Container();
         this.boardContainer = new PIXI.Container();
         this.shapeContainer = new PIXI.Container();
+        this.uiContainer = new PIXI.Container();
+        this.menuContainer = new PIXI.Container();
 
         // 设置交互区域
         this.app.stage.eventMode = 'static';
@@ -56,6 +70,8 @@ export class Game {
         this.app.stage.addChild(this.boardContainer);
         this.app.stage.addChild(this.particleContainer);
         this.app.stage.addChild(this.shapeContainer);
+        this.app.stage.addChild(this.uiContainer);
+        this.app.stage.addChild(this.menuContainer);
 
         // 初始化粒子系统
         this.particles = [];
@@ -65,17 +81,226 @@ export class Game {
             score: 0,
             isGameOver: false,
             shapes: [],
-            isAIEnabled: false
+            isAIEnabled: false,
+            currentState: 'START'
         };
 
-        this.gameBoard = this.createEmptyBoard();
-        this.initializeBoard();
-        this.createScoreDisplay();
-        this.createAIButton();
-        this.generateNewShapes();
+        this.createStartScreen();
 
         // 添加动画循环
         this.app.ticker.add(this.updateParticles.bind(this));
+    }
+
+    /**
+     * 创建开始界面
+     */
+    private createStartScreen(): void {
+        this.menuContainer.removeChildren();
+        
+        // 创建标题
+        const title = new PIXI.Text('Block Blast', {
+            fontSize: 64,
+            fill: 0xffffff,
+            fontWeight: 'bold',
+            dropShadow: true,
+            dropShadowColor: 0x000000,
+            dropShadowBlur: 4,
+            dropShadowDistance: 4
+        });
+        title.anchor.set(0.5);
+        title.x = GAME_WIDTH / 2;
+        title.y = GAME_HEIGHT / 3;
+
+        // 创建开始按钮
+        const startButton = this.createButton('开始游戏', GAME_WIDTH / 2, GAME_HEIGHT / 2);
+        startButton.on('pointerdown', () => this.startGame());
+
+        this.menuContainer.addChild(title);
+        this.menuContainer.addChild(startButton);
+    }
+
+    /**
+     * 创建通用按钮
+     */
+    private createButton(text: string, x: number, y: number): PIXI.Container {
+        const button = new PIXI.Container();
+        button.x = x;
+        button.y = y;
+
+        const bg = new PIXI.Graphics();
+        bg.lineStyle(2, 0xFFFFFF, 0.8);
+        bg.beginFill(0x0066CC);
+        bg.drawRoundedRect(-100, -25, 200, 50, 10);
+        bg.endFill();
+
+        const buttonText = new PIXI.Text(text, {
+            fontSize: 24,
+            fill: 0xffffff,
+            fontWeight: 'bold'
+        });
+        buttonText.anchor.set(0.5);
+
+        button.addChild(bg);
+        button.addChild(buttonText);
+
+        button.eventMode = 'static';
+        button.cursor = 'pointer';
+
+        // 添加交互效果
+        button.on('pointerover', () => {
+            bg.tint = 0x0099FF;
+            button.scale.set(1.05);
+        });
+        button.on('pointerout', () => {
+            bg.tint = 0xFFFFFF;
+            button.scale.set(1);
+        });
+
+        return button;
+    }
+
+    /**
+     * 开始游戏
+     */
+    private startGame(): void {
+        this.state.currentState = 'PLAYING';
+        this.menuContainer.removeChildren();
+        
+        this.gameBoard = this.createEmptyBoard();
+        this.initializeBoard();
+        this.createScoreDisplay();
+        this.createSettingsButton();
+        this.createAIButton();
+        this.generateNewShapes();
+    }
+
+    /**
+     * 创建设置按钮
+     */
+    private createSettingsButton(): void {
+        const button = new PIXI.Container();
+        button.x = 20;
+        button.y = 20;
+
+        // 创建按钮背景
+        const bg = new PIXI.Graphics();
+        bg.lineStyle(2, 0xFFFFFF, 0.5);
+        bg.beginFill(0x808080);
+        bg.drawRoundedRect(0, 0, 40, 40, 8);
+        bg.endFill();
+
+        // 创建设置图标
+        const icon = new PIXI.Graphics();
+        icon.lineStyle(2, 0xFFFFFF);
+        icon.drawCircle(20, 20, 12);
+        icon.moveTo(20, 8);
+        icon.lineTo(20, 12);
+        icon.moveTo(20, 28);
+        icon.lineTo(20, 32);
+        icon.moveTo(8, 20);
+        icon.lineTo(12, 20);
+        icon.moveTo(28, 20);
+        icon.lineTo(32, 20);
+
+        button.addChild(bg);
+        button.addChild(icon);
+
+        button.eventMode = 'static';
+        button.cursor = 'pointer';
+        button.on('pointerdown', () => this.showPauseMenu());
+
+        this.uiContainer.addChild(button);
+    }
+
+    /**
+     * 显示暂停菜单
+     */
+    private showPauseMenu(): void {
+        const previousAIState = this.state.isAIEnabled; // 保存当前AI状态
+        this.state.isAIEnabled = false; // 暂停AI
+        this.state.currentState = 'PAUSED';
+        
+        const overlay = new PIXI.Graphics();
+        overlay.beginFill(0x000000, 0.7);
+        overlay.drawRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+        overlay.endFill();
+
+        const menuContainer = new PIXI.Container();
+
+        // 创建标题
+        const title = new PIXI.Text('游戏暂停', {
+            fontSize: 48,
+            fill: 0xffffff,
+            fontWeight: 'bold'
+        });
+        title.anchor.set(0.5);
+        title.x = GAME_WIDTH / 2;
+        title.y = GAME_HEIGHT / 3;
+
+        // 创建继续按钮
+        const continueButton = this.createButton('继续游戏', GAME_WIDTH / 2, GAME_HEIGHT / 2);
+        continueButton.on('pointerdown', () => {
+            this.menuContainer.removeChildren();
+            this.state.currentState = 'PLAYING';
+            // 恢复之前的AI状态
+            this.state.isAIEnabled = previousAIState;
+            if (this.state.isAIEnabled) {
+                this.runAI(); // 如果之前AI是开启的，重新启动AI
+            }
+        });
+
+        // 创建返回主页按钮
+        const homeButton = this.createButton('返回主页', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 70);
+        homeButton.on('pointerdown', () => {
+            this.resetGame();
+            this.createStartScreen();
+        });
+
+        menuContainer.addChild(overlay);
+        menuContainer.addChild(title);
+        menuContainer.addChild(continueButton);
+        menuContainer.addChild(homeButton);
+
+        this.menuContainer.addChild(menuContainer);
+    }
+
+    /**
+     * 重置游戏状态
+     */
+    private resetGame(): void {
+        // 停止AI操作
+        this.state.isAIEnabled = false;
+
+        // 清除分数显示
+        if (this.scoreText && this.scoreText.parent) {
+            this.scoreText.parent.removeChild(this.scoreText);
+            this.scoreText.destroy();
+            this.scoreText = undefined;
+        }
+
+        this.state = {
+            score: 0,
+            isGameOver: false,
+            shapes: [],
+            isAIEnabled: false,
+            currentState: 'START'
+        };
+
+        // 清除所有容器
+        this.boardContainer.removeChildren();
+        this.shapeContainer.removeChildren();
+        this.uiContainer.removeChildren();
+        this.particleContainer.removeChildren();
+        this.menuContainer.removeChildren();
+
+        // 清除所有粒子
+        this.particles.forEach(particle => {
+            if (particle.sprite.parent) {
+                particle.sprite.parent.removeChild(particle.sprite);
+            }
+            particle.sprite.destroy();
+        });
+        this.particles = [];
     }
 
     /**
@@ -160,8 +385,8 @@ export class Game {
             dropShadowBlur: 4,
             dropShadowDistance: 2,
         });
-        this.scoreText.x = BOARD_OFFSET_X;
-        this.scoreText.y = 30;
+        this.scoreText.x = BOARD_OFFSET_X  + 50;
+        this.scoreText.y = 20;
         this.app.stage.addChild(this.scoreText);
     }
 
@@ -377,14 +602,47 @@ export class Game {
      */
     private gameOver(): void {
         this.state.isGameOver = true;
-        const message = new PIXI.Text('游戏结束', {
+        this.state.currentState = 'GAME_OVER';
+
+        const overlay = new PIXI.Graphics();
+        overlay.beginFill(0x000000, 0.7);
+        overlay.drawRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+        overlay.endFill();
+
+        const menuContainer = new PIXI.Container();
+
+        // 创建游戏结束文本
+        const gameOverText = new PIXI.Text('游戏结束', {
             fontSize: 48,
+            fill: 0xffffff,
+            fontWeight: 'bold'
+        });
+        gameOverText.anchor.set(0.5);
+        gameOverText.x = GAME_WIDTH / 2;
+        gameOverText.y = GAME_HEIGHT / 3;
+
+        // 创建分数文本
+        const scoreText = new PIXI.Text(`最终分数: ${this.state.score}`, {
+            fontSize: 32,
             fill: 0xffffff
         });
-        message.anchor.set(0.5);
-        message.x = GAME_WIDTH / 2;
-        message.y = GAME_HEIGHT / 2;
-        this.app.stage.addChild(message);
+        scoreText.anchor.set(0.5);
+        scoreText.x = GAME_WIDTH / 2;
+        scoreText.y = GAME_HEIGHT / 2;
+
+        // 创建返回主页按钮
+        const homeButton = this.createButton('返回主页', GAME_WIDTH / 2, GAME_HEIGHT * 2 / 3);
+        homeButton.on('pointerdown', () => {
+            this.resetGame();
+            this.createStartScreen();
+        });
+
+        menuContainer.addChild(overlay);
+        menuContainer.addChild(gameOverText);
+        menuContainer.addChild(scoreText);
+        menuContainer.addChild(homeButton);
+
+        this.menuContainer.addChild(menuContainer);
     }
 
     /**
@@ -607,11 +865,21 @@ export class Game {
     private clearBlock(block: Block): void {
         if (block.sprite.parent) {
             block.sprite.parent.removeChild(block.sprite);
+            block.sprite.destroy();
         }
+
         const emptyBlock = this.createEmptyBlock(
             block.position.col * BLOCK_SIZE + BOARD_OFFSET_X,
             block.position.row * BLOCK_SIZE + BOARD_OFFSET_Y
         );
+        
+        // 确保新的空方块完全透明
+        const graphics = emptyBlock.getChildAt(0) as PIXI.Graphics;
+        graphics.clear();
+        graphics.beginFill(0x808080, 0.1);
+        graphics.drawRoundedRect(0, 0, BLOCK_SIZE, BLOCK_SIZE, 4);
+        graphics.endFill();
+
         this.boardContainer.addChild(emptyBlock);
         block.sprite = emptyBlock;
         block.isEmpty = true;
@@ -624,14 +892,13 @@ export class Game {
      * @param cols - 要清除的列索引数组
      */
     private clearLines(rows: number[], cols: number[]): void {
-        // 创建动画序列
-        const timeline = gsap.timeline();
-
         // 收集要清除的方块
         const blocksToRemove: Block[] = [];
         rows.forEach(row => {
             for (let col = 0; col < GRID_SIZE; col++) {
-                blocksToRemove.push(this.gameBoard[row][col]);
+                if (!blocksToRemove.includes(this.gameBoard[row][col])) {
+                    blocksToRemove.push(this.gameBoard[row][col]);
+                }
             }
         });
         cols.forEach(col => {
@@ -642,37 +909,34 @@ export class Game {
             }
         });
 
-        // 闪烁效果
-        blocksToRemove.forEach(block => {
-            gsap.to(block.sprite, {
+        // 创建动画序列
+        const timeline = gsap.timeline();
+
+        // 为每个方块创建消失动画
+        blocksToRemove.forEach((block, index) => {
+            timeline.to(block.sprite, {
                 alpha: 0.2,
-                duration: 0.1,
-                repeat: 2, // 3次闪烁
+                duration: 0.05, // 加快闪烁速度
+                repeat: 1, // 减少闪烁次数
                 yoyo: true,
                 ease: "none",
                 onComplete: () => {
-                    // 闪烁结束后的消失动画
-                    gsap.to(block.sprite, {
-                        alpha: 0,
-                        scale: 0.8,
-                        duration: 0.15,
-                        ease: "power2.in",
-                        onComplete: () => {
-                            this.createParticleEffect(
-                                block.sprite.x + BLOCK_SIZE / 2,
-                                block.sprite.y + BLOCK_SIZE / 2,
-                                block.color
-                            );
-                            this.clearBlock(block);
-                            
-                            // 在最后一个方块清除完成后检查游戏是否结束
-                            if (block === blocksToRemove[blocksToRemove.length - 1]) {
-                                this.checkGameOver();
-                            }
-                        }
-                    });
+                    // 创建粒子效果
+                    this.createParticleEffect(
+                        block.sprite.x + BLOCK_SIZE / 2,
+                        block.sprite.y + BLOCK_SIZE / 2,
+                        block.color
+                    );
+
+                    // 清除方块
+                    this.clearBlock(block);
                 }
-            });
+            }, index * 0.02); // 减少方块之间的延迟
+        });
+
+        // 动画完成后检查游戏状态
+        timeline.call(() => {
+            this.checkGameOver();
         });
     }
 
@@ -757,27 +1021,32 @@ export class Game {
     private updateParticles(delta: number): void {
         for (let i = this.particles.length - 1; i >= 0; i--) {
             const particle = this.particles[i];
-            particle.life -= 0.016 * delta;
+            particle.life -= 0.025 * delta; // 加快生命消耗
             
             if (particle.life <= 0) {
-                this.particleContainer.removeChild(particle.sprite);
+                if (particle.sprite.parent) {
+                    particle.sprite.parent.removeChild(particle.sprite);
+                }
                 particle.sprite.destroy();
                 this.particles.splice(i, 1);
                 continue;
             }
             
-            // 更新位置
-            particle.sprite.x += particle.vx * delta;
-            particle.sprite.y += particle.vy * delta;
-            particle.vy += 0.2 * delta; // 重力效果
+            // 更新位置，添加曲线运动
+            particle.sprite.x += particle.vx * delta * 1.2; // 加快水平移动
+            particle.sprite.y += particle.vy * delta * 1.2; // 加快垂直移动
+            particle.sprite.x += particle.curve * Math.sin(particle.life * 8) * delta; // 加快曲线频率
+            particle.vy += 0.2 * delta; // 增加重力效果
             
             // 旋转效果
-            particle.sprite.rotation += particle.rotation;
+            particle.sprite.rotation += particle.rotation * delta * 1.2;
             
-            // 缩放和透明度
-            const lifeRatio = particle.life / 1.2;
-            particle.sprite.alpha = lifeRatio;
-            particle.sprite.scale.set(lifeRatio * 0.5);
+            // 使用生命值比例来创建更平滑的缩放和透明度过渡
+            const lifeRatio = particle.life / particle.maxLife;
+            const easeRatio = this.easeOutQuad(lifeRatio);
+            
+            particle.sprite.alpha = easeRatio;
+            particle.sprite.scale.set(easeRatio * 0.8);
         }
     }
 
@@ -788,7 +1057,37 @@ export class Game {
      * @param color - 粒子的颜色
      */
     private createParticleEffect(x: number, y: number, color: number): void {
-        const particleCount = 30; // 增加粒子数量
+        const particleCount = 25; // 减少粒子数量以提高性能
+        const glowColor = color;
+        
+        // 创建爆炸波
+        const blast = new PIXI.Graphics();
+        blast.beginFill(color, 0.3);
+        blast.drawCircle(0, 0, 5);
+        blast.endFill();
+        blast.x = x;
+        blast.y = y;
+        this.particleContainer.addChild(blast);
+
+        // 加快爆炸波动画
+        gsap.to(blast.scale, {
+            x: 8,
+            y: 8,
+            duration: 0.3,
+            ease: "power2.out",
+            onComplete: () => {
+                if (blast.parent) {
+                    blast.parent.removeChild(blast);
+                }
+                blast.destroy();
+            }
+        });
+        gsap.to(blast, {
+            alpha: 0,
+            duration: 0.3,
+            ease: "power2.out"
+        });
+
         for (let i = 0; i < particleCount; i++) {
             const particle = new PIXI.Graphics();
             
@@ -796,46 +1095,63 @@ export class Game {
             const shapeType = Math.random();
             if (shapeType < 0.3) {
                 // 圆形粒子
-                particle.beginFill(color);
-                particle.drawCircle(0, 0, 3);
+                particle.beginFill(color, 0.9);
+                particle.drawCircle(0, 0, 2);
+                particle.endFill();
+                // 添加发光效果
+                particle.beginFill(glowColor, 0.4);
+                particle.drawCircle(0, 0, 4);
                 particle.endFill();
             } else if (shapeType < 0.6) {
                 // 星形粒子
-                particle.beginFill(color);
-                this.drawStar(particle, 0, 0, 5, 4, 2);
+                particle.beginFill(color, 0.9);
+                this.drawStar(particle, 0, 0, 5, 3, 1.5);
+                particle.endFill();
+                // 添加发光效果
+                particle.beginFill(glowColor, 0.4);
+                this.drawStar(particle, 0, 0, 5, 5, 2.5);
                 particle.endFill();
             } else {
-                // 方形粒子
-                particle.beginFill(color);
-                particle.drawRect(-2, -2, 4, 4);
+                // 菱形粒子
+                particle.beginFill(color, 0.9);
+                particle.moveTo(0, -3);
+                particle.lineTo(3, 0);
+                particle.lineTo(0, 3);
+                particle.lineTo(-3, 0);
+                particle.closePath();
+                particle.endFill();
+                // 添加发光效果
+                particle.beginFill(glowColor, 0.4);
+                particle.moveTo(0, -5);
+                particle.lineTo(5, 0);
+                particle.lineTo(0, 5);
+                particle.lineTo(-5, 0);
+                particle.closePath();
                 particle.endFill();
             }
             
             particle.x = x;
             particle.y = y;
             
-            const angle = Math.random() * Math.PI * 2;
-            const speed = 2 + Math.random() * 4;
-            const scale = 0.5 + Math.random() * 0.5;
+            // 创建更快的运动轨迹
+            const angle = (Math.random() * Math.PI * 2);
+            const speed = 3 + Math.random() * 5; // 增加速度
+            const curve = (Math.random() - 0.5) * 3; // 增加曲线幅度
+            const scale = 0.5 + Math.random() * 0.8;
             particle.scale.set(scale);
             
             const particle_obj = {
                 sprite: particle,
                 vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed,
-                rotation: (Math.random() - 0.5) * 0.2,
-                life: 0.8 + Math.random() * 0.4
+                vy: Math.sin(angle) * speed - 4, // 增加向上的初始速度
+                curve: curve,
+                rotation: (Math.random() - 0.5) * 0.6, // 增加旋转速度
+                life: 0.8 + Math.random() * 0.4, // 减少生命周期
+                maxLife: 0.8 + Math.random() * 0.4
             };
             
             this.particles.push(particle_obj);
             this.particleContainer.addChild(particle);
-            
-            // 添加发光效果
-            const glow = new PIXI.Graphics();
-            glow.beginFill(color, 0.3);
-            glow.drawCircle(0, 0, 6);
-            glow.endFill();
-            particle.addChild(glow);
         }
     }
 
@@ -866,6 +1182,49 @@ export class Game {
                 y + Math.sin(angle) * r
             );
         }
+    }
+
+    /**
+     * 绘制心形
+     * @param graphics - PIXI图形对象
+     * @param x - 中心X坐标
+     * @param y - 中心Y坐标
+     * @param size - 心形大小
+     */
+    private drawHeart(graphics: PIXI.Graphics, x: number, y: number, size: number): void {
+        const bezierPoints = [
+            { x: x, y: y - size * 0.5 },
+            { x: x - size, y: y - size },
+            { x: x - size, y: y },
+            { x: x, y: y + size },
+            { x: x + size, y: y },
+            { x: x + size, y: y - size },
+            { x: x, y: y - size * 0.5 }
+        ];
+
+        graphics.moveTo(bezierPoints[0].x, bezierPoints[0].y);
+        
+        for (let i = 0; i < bezierPoints.length - 2; i += 2) {
+            const xc = (bezierPoints[i + 1].x + bezierPoints[i + 2].x) / 2;
+            const yc = (bezierPoints[i + 1].y + bezierPoints[i + 2].y) / 2;
+            graphics.quadraticCurveTo(
+                bezierPoints[i + 1].x,
+                bezierPoints[i + 1].y,
+                xc,
+                yc
+            );
+        }
+        
+        graphics.closePath();
+    }
+
+    /**
+     * 缓动函数 - easeOutQuad
+     * @param t - 时间比例 (0-1)
+     * @returns 缓动后的值
+     */
+    private easeOutQuad(t: number): number {
+        return t * (2 - t);
     }
 
     /**
@@ -911,7 +1270,7 @@ export class Game {
             }
         });
 
-        this.app.stage.addChild(button);
+        this.uiContainer.addChild(button);
     }
 
     /**
@@ -1084,7 +1443,7 @@ export class Game {
      * 自动寻找并执行最佳移动
      */
     private async runAI(): Promise<void> {
-        if (!this.state.isAIEnabled || this.state.isGameOver) return;
+        if (!this.state.isAIEnabled || this.state.isGameOver || this.state.currentState !== 'PLAYING') return;
 
         // 找到最佳移动
         let bestShape = null;
@@ -1101,7 +1460,8 @@ export class Game {
         if (bestShape && bestMove.score > -Infinity) {
             // 等待0.15秒
             await new Promise(resolve => setTimeout(resolve, 150));
-            if (!this.state.isAIEnabled) return;
+            // 再次检查AI是否仍然启用
+            if (!this.state.isAIEnabled || this.state.currentState !== 'PLAYING') return;
 
             // 计算目标位置
             const targetX = bestMove.col * BLOCK_SIZE + BOARD_OFFSET_X;
