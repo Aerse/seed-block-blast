@@ -246,6 +246,9 @@ export class Game {
      * 会清除现有形状并生成3个新的随机形状
      */
     private generateNewShapes(): void {
+        // 如果游戏已经结束，不再生成新形状
+        if (this.state.isGameOver) return;
+
         // 清除现有的形状
         this.state.shapes.forEach(shape => {
             gsap.to(shape.container, {
@@ -259,65 +262,59 @@ export class Game {
 
         this.state.shapes = [];
         this.state.placedShapesCount = 0;
-        let attempts = 0;
-        const maxAttempts = 10; // 最大尝试次数，防止无限循环
 
-        do {
-            this.state.shapes = [];
-            // 生成3个新形状
-            for (let i = 0; i < 3; i++) {
-                const shapeIndex = Math.floor(Math.random() * SHAPES.length);
-                const colorIndex = Math.floor(Math.random() * BLOCK_COLORS.length);
-                let shape = SHAPES[shapeIndex];
-                const color = BLOCK_COLORS[colorIndex];
+        // 生成3个新形状
+        for (let i = 0; i < 3; i++) {
+            const shapeIndex = Math.floor(Math.random() * SHAPES.length);
+            const colorIndex = Math.floor(Math.random() * BLOCK_COLORS.length);
+            let shape = SHAPES[shapeIndex];
+            const color = BLOCK_COLORS[colorIndex];
 
-                // 随机旋转形状
-                const rotations = Math.floor(Math.random() * 4);
-                for (let r = 0; r < rotations; r++) {
-                    shape = this.rotateShape(shape);
-                }
+            // 随机旋转形状
+            const rotations = Math.floor(Math.random() * 4);
+            for (let r = 0; r < rotations; r++) {
+                shape = this.rotateShape(shape);
+            }
 
-                const container = new PIXI.Container() as DraggableContainer;
-                const position = this.calculateShapePosition(i, shape[0].length, shape.length);
-                container.x = position.x;
-                container.y = position.y;
-                container.alpha = 0;
-                container.dragging = false;
-                container.dragData = null;
-                container.dragStartPos = new PIXI.Point();
-                container.sortableChildren = true;
+            const container = new PIXI.Container() as DraggableContainer;
+            const position = this.calculateShapePosition(i, shape[0].length, shape.length);
+            container.x = position.x;
+            container.y = position.y;
+            container.alpha = 0;
+            container.dragging = false;
+            container.dragData = null;
+            container.dragStartPos = new PIXI.Point();
+            container.sortableChildren = true;
 
-                // 添加形状方块
-                for (let row = 0; row < shape.length; row++) {
-                    for (let col = 0; col < shape[row].length; col++) {
-                        if (shape[row][col]) {
-                            const block = this.createBlock(color);
-                            block.x = col * BLOCK_SIZE;
-                            block.y = row * BLOCK_SIZE;
-                            container.addChild(block);
-                        }
+            // 添加形状方块
+            for (let row = 0; row < shape.length; row++) {
+                for (let col = 0; col < shape[row].length; col++) {
+                    if (shape[row][col]) {
+                        const block = this.createBlock(color);
+                        block.x = col * BLOCK_SIZE;
+                        block.y = row * BLOCK_SIZE;
+                        container.addChild(block);
                     }
                 }
-
-                container.eventMode = 'static';
-                container.cursor = 'pointer';
-                container.on('pointerdown', this.onDragStart.bind(this));
-
-                const newShape = {
-                    blocks: shape,
-                    color,
-                    container,
-                    width: shape[0].length,
-                    height: shape.length
-                };
-
-                this.state.shapes.push(newShape);
-                this.shapeContainer.addChild(container);
             }
-            attempts++;
-        } while (!this.hasValidMoves() && attempts < maxAttempts);
 
-        // 如果达到最大尝试次数仍无法生成可放置的形状，游戏结束
+            container.eventMode = 'static';
+            container.cursor = 'pointer';
+            container.on('pointerdown', this.onDragStart.bind(this));
+
+            const newShape = {
+                blocks: shape,
+                color,
+                container,
+                width: shape[0].length,
+                height: shape.length
+            };
+
+            this.state.shapes.push(newShape);
+            this.shapeContainer.addChild(container);
+        }
+
+        // 检查是否有可放置的位置
         if (!this.hasValidMoves()) {
             this.gameOver();
             return;
@@ -336,11 +333,11 @@ export class Game {
 
     /**
      * 检查游戏是否结束
-     * 当没有有效移动时触发游戏结束
+     * 当没有有效移动且无法生成新形状时触发游戏结束
      */
     private checkGameOver(): void {
-        // 只需要检查当前剩余的形状是否有可放置的位置
         if (!this.hasValidMoves()) {
+            // 如果当前没有形状可以放置，且没有足够空间放置新形状
             this.gameOver();
         }
     }
@@ -370,22 +367,20 @@ export class Game {
      * @returns 如果有可行的移动返回true，否则返回false
      */
     private hasValidMoves(): boolean {
-        // 如果没有形状，返回true，因为会生成新的形状
-        if (this.state.shapes.length === 0) {
-            return true;
-        }
-        
-        // 检查每个形状是否有可能的放置位置
-        return this.state.shapes.some(shape => {
-            for (let row = 0; row < GRID_SIZE; row++) {
-                for (let col = 0; col < GRID_SIZE; col++) {
-                    if (this.canPlaceShape(row, col, shape)) {
-                        return true;
+        // 检查当前形状是否可以放置
+        if (this.state.shapes.length > 0) {
+            return this.state.shapes.some(shape => {
+                for (let row = 0; row < GRID_SIZE; row++) {
+                    for (let col = 0; col < GRID_SIZE; col++) {
+                        if (this.canPlaceShape(row, col, shape)) {
+                            return true;
+                        }
                     }
                 }
-            }
-            return false;
-        });
+                return false;
+            });
+        }
+        return false; // 如果没有当前形状，返回false
     }
 
     /**
@@ -570,6 +565,9 @@ export class Game {
                 }
             }
         }
+
+        // 检查并清除完整的行和列
+        this.checkLines();
     }
 
     /**
@@ -607,6 +605,11 @@ export class Game {
         if (rowsToRemove.length > 0 || colsToRemove.length > 0) {
             this.clearLines(rowsToRemove, colsToRemove);
             this.updateScore(rowsToRemove.length + colsToRemove.length);
+        }
+
+        // 在消除完成后检查游戏是否结束
+        if (this.state.shapes.length === 1 && !this.hasValidMoves()) {
+            this.gameOver();
         }
     }
 
