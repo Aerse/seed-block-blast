@@ -2,7 +2,7 @@
 
 一个基于 TypeScript 和 PixiJS 开发的现代方块消除游戏。玩家需要通过策略性地放置不同形状的方块来消除完整的行或列，获取高分。
 
-[在线体验地址](https://Aerse.github.io/blockBlast)
+🕹️[在线体验地址](https://aerse.github.io/seed-block-blast/) 🕹️
 
 ![游戏截图](src/assets/screenShot.png)
 
