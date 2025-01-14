@@ -2,11 +2,17 @@ import * as PIXI from 'pixi.js';
 import { Block, DraggableContainer, GameState, Shape } from './types';
 import { BLOCK_COLORS, BLOCK_SIZE, BOARD_OFFSET_X, BOARD_OFFSET_Y, GAME_HEIGHT, GAME_WIDTH, GRID_SIZE, SHAPES, SHAPES_AREA } from './constants';
 import gsap from 'gsap';
+import { GameAI } from './GameAI';
+import { StartScreen } from './screens/StartScreen';
+import { PauseScreen } from './screens/PauseScreen';
+import { SettingsButton } from './ui/SettingsButton';
+import { UIButton } from './ui/UIButton';
 
 interface GameStateInterface {
     score: number;
     isGameOver: boolean;
     shapes: Shape[];
+    previousAIState: boolean;
     isAIEnabled: boolean;
     currentState: string;
 }
@@ -35,11 +41,14 @@ export class Game {
     }> = [];
     private particleContainer: PIXI.Container;
     private particleTexture: PIXI.Texture;
+    private gameAI!: GameAI;
+    private startScreen: StartScreen;
+    private pauseScreen: PauseScreen;
 
     constructor() {
         // 获取设备像素比
         const devicePixelRatio = window.devicePixelRatio || 1;
-        
+
         this.app = new PIXI.Application({
             width: GAME_WIDTH,
             height: GAME_HEIGHT,
@@ -81,82 +90,36 @@ export class Game {
             score: 0,
             isGameOver: false,
             shapes: [],
+            previousAIState: false,
             isAIEnabled: false,
             currentState: 'START'
         };
 
-        this.createStartScreen();
+        // 创建开始界面
+        this.startScreen = new StartScreen(() => this.startGame());
+        this.menuContainer.addChild(this.startScreen);
+
+        // 创建暂停界面
+        this.pauseScreen = new PauseScreen({
+            onContinue: () => {
+                this.pauseScreen.hide();
+                this.state.currentState = 'PLAYING';
+                // 恢复之前的AI状态
+                this.state.isAIEnabled = this.state.previousAIState;
+                if (this.state.isAIEnabled) {
+                    this.runAI();
+                }
+            },
+            onHome: () => {
+                this.pauseScreen.hide();
+                this.resetGame();
+            }
+        });
+        this.pauseScreen.hide();
+        this.menuContainer.addChild(this.pauseScreen);
 
         // 添加动画循环
         this.app.ticker.add(this.updateParticles.bind(this));
-    }
-
-    /**
-     * 创建开始界面
-     */
-    private createStartScreen(): void {
-        this.menuContainer.removeChildren();
-        
-        // 创建标题
-        const title = new PIXI.Text('Block Blast', {
-            fontSize: 64,
-            fill: 0xffffff,
-            fontWeight: 'bold',
-            dropShadow: true,
-            dropShadowColor: 0x000000,
-            dropShadowBlur: 4,
-            dropShadowDistance: 4
-        });
-        title.anchor.set(0.5);
-        title.x = GAME_WIDTH / 2;
-        title.y = GAME_HEIGHT / 3;
-
-        // 创建开始按钮
-        const startButton = this.createButton('开始游戏', GAME_WIDTH / 2, GAME_HEIGHT / 2);
-        startButton.on('pointerdown', () => this.startGame());
-
-        this.menuContainer.addChild(title);
-        this.menuContainer.addChild(startButton);
-    }
-
-    /**
-     * 创建通用按钮
-     */
-    private createButton(text: string, x: number, y: number): PIXI.Container {
-        const button = new PIXI.Container();
-        button.x = x;
-        button.y = y;
-
-        const bg = new PIXI.Graphics();
-        bg.lineStyle(2, 0xFFFFFF, 0.8);
-        bg.beginFill(0x0066CC);
-        bg.drawRoundedRect(-100, -25, 200, 50, 10);
-        bg.endFill();
-
-        const buttonText = new PIXI.Text(text, {
-            fontSize: 24,
-            fill: 0xffffff,
-            fontWeight: 'bold'
-        });
-        buttonText.anchor.set(0.5);
-
-        button.addChild(bg);
-        button.addChild(buttonText);
-
-        button.eventMode = 'static';
-        button.cursor = 'pointer';
-
-        // 添加交互效果
-        button.on('pointerover', () => {
-            bg.tint = 0x0099FF;
-            button.scale.set(1.05);
-        });
-        button.on('pointerout', () => {
-            bg.tint = 0xFFFFFF;
-            button.scale.set(1);
-        });
-
-        return button;
     }
 
     /**
@@ -164,104 +127,18 @@ export class Game {
      */
     private startGame(): void {
         this.state.currentState = 'PLAYING';
-        this.menuContainer.removeChildren();
-        
+        this.startScreen.hide();
+        this.boardContainer.removeChildren(); // 清除之前的游戏板
+
+        // 创建游戏板并初始化AI
         this.gameBoard = this.createEmptyBoard();
+        this.gameAI = new GameAI(this.gameBoard, this.shapeContainer);
+
         this.initializeBoard();
         this.createScoreDisplay();
         this.createSettingsButton();
         this.createAIButton();
         this.generateNewShapes();
-    }
-
-    /**
-     * 创建设置按钮
-     */
-    private createSettingsButton(): void {
-        const button = new PIXI.Container();
-        button.x = 20;
-        button.y = 20;
-
-        // 创建按钮背景
-        const bg = new PIXI.Graphics();
-        bg.lineStyle(2, 0xFFFFFF, 0.5);
-        bg.beginFill(0x808080);
-        bg.drawRoundedRect(0, 0, 40, 40, 8);
-        bg.endFill();
-
-        // 创建设置图标
-        const icon = new PIXI.Graphics();
-        icon.lineStyle(2, 0xFFFFFF);
-        icon.drawCircle(20, 20, 12);
-        icon.moveTo(20, 8);
-        icon.lineTo(20, 12);
-        icon.moveTo(20, 28);
-        icon.lineTo(20, 32);
-        icon.moveTo(8, 20);
-        icon.lineTo(12, 20);
-        icon.moveTo(28, 20);
-        icon.lineTo(32, 20);
-
-        button.addChild(bg);
-        button.addChild(icon);
-
-        button.eventMode = 'static';
-        button.cursor = 'pointer';
-        button.on('pointerdown', () => this.showPauseMenu());
-
-        this.uiContainer.addChild(button);
-    }
-
-    /**
-     * 显示暂停菜单
-     */
-    private showPauseMenu(): void {
-        const previousAIState = this.state.isAIEnabled; // 保存当前AI状态
-        this.state.isAIEnabled = false; // 暂停AI
-        this.state.currentState = 'PAUSED';
-        
-        const overlay = new PIXI.Graphics();
-        overlay.beginFill(0x000000, 0.7);
-        overlay.drawRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-        overlay.endFill();
-
-        const menuContainer = new PIXI.Container();
-
-        // 创建标题
-        const title = new PIXI.Text('游戏暂停', {
-            fontSize: 48,
-            fill: 0xffffff,
-            fontWeight: 'bold'
-        });
-        title.anchor.set(0.5);
-        title.x = GAME_WIDTH / 2;
-        title.y = GAME_HEIGHT / 3;
-
-        // 创建继续按钮
-        const continueButton = this.createButton('继续游戏', GAME_WIDTH / 2, GAME_HEIGHT / 2);
-        continueButton.on('pointerdown', () => {
-            this.menuContainer.removeChildren();
-            this.state.currentState = 'PLAYING';
-            // 恢复之前的AI状态
-            this.state.isAIEnabled = previousAIState;
-            if (this.state.isAIEnabled) {
-                this.runAI(); // 如果之前AI是开启的，重新启动AI
-            }
-        });
-
-        // 创建返回主页按钮
-        const homeButton = this.createButton('返回主页', GAME_WIDTH / 2, GAME_HEIGHT / 2 + 70);
-        homeButton.on('pointerdown', () => {
-            this.resetGame();
-            this.createStartScreen();
-        });
-
-        menuContainer.addChild(overlay);
-        menuContainer.addChild(title);
-        menuContainer.addChild(continueButton);
-        menuContainer.addChild(homeButton);
-
-        this.menuContainer.addChild(menuContainer);
     }
 
     /**
@@ -282,6 +159,7 @@ export class Game {
             score: 0,
             isGameOver: false,
             shapes: [],
+            previousAIState: false,
             isAIEnabled: false,
             currentState: 'START'
         };
@@ -291,7 +169,6 @@ export class Game {
         this.shapeContainer.removeChildren();
         this.uiContainer.removeChildren();
         this.particleContainer.removeChildren();
-        this.menuContainer.removeChildren();
 
         // 清除所有粒子
         this.particles.forEach(particle => {
@@ -301,6 +178,9 @@ export class Game {
             particle.sprite.destroy();
         });
         this.particles = [];
+
+        // 显示开始界面
+        this.startScreen.show();
     }
 
     /**
@@ -334,14 +214,14 @@ export class Game {
                     col * BLOCK_SIZE + BOARD_OFFSET_X,
                     row * BLOCK_SIZE + BOARD_OFFSET_Y
                 );
-                
+
                 board[row][col] = {
                     color: 0,
                     position: { row, col },
                     sprite,
                     isEmpty: true
                 };
-                
+
                 this.boardContainer.addChild(sprite);
             }
         }
@@ -356,19 +236,19 @@ export class Game {
         // 添加网格线
         const graphics = new PIXI.Graphics();
         graphics.lineStyle(1, 0xffffff, 0.3);
-        
+
         // 绘制垂直线
         for (let i = 0; i <= GRID_SIZE; i++) {
             graphics.moveTo(BOARD_OFFSET_X + i * BLOCK_SIZE, BOARD_OFFSET_Y);
             graphics.lineTo(BOARD_OFFSET_X + i * BLOCK_SIZE, BOARD_OFFSET_Y + GRID_SIZE * BLOCK_SIZE);
         }
-        
+
         // 绘制水平线
         for (let i = 0; i <= GRID_SIZE; i++) {
             graphics.moveTo(BOARD_OFFSET_X, BOARD_OFFSET_Y + i * BLOCK_SIZE);
             graphics.lineTo(BOARD_OFFSET_X + GRID_SIZE * BLOCK_SIZE, BOARD_OFFSET_Y + i * BLOCK_SIZE);
         }
-        
+
         this.boardContainer.addChild(graphics);
     }
 
@@ -385,7 +265,7 @@ export class Game {
             dropShadowBlur: 4,
             dropShadowDistance: 2,
         });
-        this.scoreText.x = BOARD_OFFSET_X  + 50;
+        this.scoreText.x = BOARD_OFFSET_X + 50;
         this.scoreText.y = 20;
         this.app.stage.addChild(this.scoreText);
     }
@@ -397,31 +277,31 @@ export class Game {
      */
     private createBlock(color: number): PIXI.Container {
         const container = new PIXI.Container();
-        
+
         // 创建主体方块
         const block = new PIXI.Graphics();
-        
+
         // 添加阴影效果
         const shadow = new PIXI.Graphics();
         shadow.beginFill(0x000000, 0.2);
         shadow.drawRoundedRect(2, 2, BLOCK_SIZE, BLOCK_SIZE, 4);
         shadow.endFill();
-        
+
         // 添加渐变效果
         const gradient = new PIXI.Graphics();
         gradient.beginFill(0xFFFFFF, 0.3);
         gradient.drawRect(0, 0, BLOCK_SIZE, BLOCK_SIZE);
         gradient.endFill();
         gradient.beginFill(0x000000, 0.1);
-        gradient.drawRect(0, BLOCK_SIZE/2, BLOCK_SIZE, BLOCK_SIZE/2);
+        gradient.drawRect(0, BLOCK_SIZE / 2, BLOCK_SIZE, BLOCK_SIZE / 2);
         gradient.endFill();
-        
+
         // 主体方块（带描边）
         block.lineStyle(2, 0xFFFFFF, 0.5);
         block.beginFill(color);
         block.drawRoundedRect(0, 0, BLOCK_SIZE, BLOCK_SIZE, 4);
         block.endFill();
-        
+
         // 添加高光效果
         const highlight = new PIXI.Graphics();
         highlight.beginFill(0xFFFFFF, 0.2);
@@ -431,19 +311,19 @@ export class Game {
             0, BLOCK_SIZE * 0.4
         ]);
         highlight.endFill();
-        
+
         // 添加内发光效果
         const glow = new PIXI.Graphics();
         glow.beginFill(color, 0.3);
         glow.drawRoundedRect(-2, -2, BLOCK_SIZE + 4, BLOCK_SIZE + 4, 6);
         glow.endFill();
-        
+
         container.addChild(shadow);
         container.addChild(glow);
         container.addChild(block);
         container.addChild(gradient);
         container.addChild(highlight);
-        
+
         return container;
     }
 
@@ -458,7 +338,7 @@ export class Game {
         const availableWidth = GAME_WIDTH - 40; // 左右各留 20px 边距
         const slotWidth = availableWidth / 3;
         const centerX = SHAPES_AREA.x + (slotWidth * index) + (slotWidth / 2);
-        
+
         return {
             x: centerX - (shapeWidth * BLOCK_SIZE) / 2,
             y: SHAPES_AREA.y
@@ -564,14 +444,14 @@ export class Game {
         const rows = shape.length;
         const cols = shape[0].length;
         const rotated: boolean[][] = Array(cols).fill(0).map(() => Array(rows).fill(false));
-        
+
         for (let row = 0; row < rows; row++) {
             for (let col = 0; col < cols; col++) {
                 // 90度顺时针旋转
                 rotated[col][rows - 1 - row] = shape[row][col];
             }
         }
-        
+
         return rotated;
     }
 
@@ -631,10 +511,16 @@ export class Game {
         scoreText.y = GAME_HEIGHT / 2;
 
         // 创建返回主页按钮
-        const homeButton = this.createButton('返回主页', GAME_WIDTH / 2, GAME_HEIGHT * 2 / 3);
+        const homeButton = new UIButton('返回主页', {
+            x: GAME_WIDTH / 2,
+            y: GAME_HEIGHT * 2 / 3,
+            width: 200,
+            height: 50,
+            fontSize: 24
+        });
         homeButton.on('pointerdown', () => {
             this.resetGame();
-            this.createStartScreen();
+            this.startScreen.show();
         });
 
         menuContainer.addChild(overlay);
@@ -657,7 +543,7 @@ export class Game {
         // 将容器移到顶层
         this.shapeContainer.removeChild(container);
         this.shapeContainer.addChild(container);
-        
+
         container.alpha = 0.7;
         container.dragging = true;
         container.dragData = event.data;
@@ -719,7 +605,7 @@ export class Game {
 
         if (this.canPlaceShape(gridPos.row, gridPos.col, draggedShape)) {
             this.placeShape(gridPos.row, gridPos.col, draggedShape);
-            
+
             // 移除已放置的形状
             const index = this.state.shapes.indexOf(draggedShape);
             if (index > -1) {
@@ -729,7 +615,7 @@ export class Game {
 
             // 清除预览
             this.clearGridPreview();
-            
+
             // 检查并清除完整的行和列
             this.checkLines();
 
@@ -786,7 +672,7 @@ export class Game {
                 if (blocks[row][col]) {
                     const block = this.gameBoard[startRow + row][startCol + col];
                     const newBlockContainer = this.createBlock(color);
-                    
+
                     // 设置位置
                     newBlockContainer.x = block.sprite.x;
                     newBlockContainer.y = block.sprite.y;
@@ -872,11 +758,11 @@ export class Game {
             block.position.col * BLOCK_SIZE + BOARD_OFFSET_X,
             block.position.row * BLOCK_SIZE + BOARD_OFFSET_Y
         );
-        
-        // 确保新的空方块完全透明
+
+        // 确保新的空方块有正确的透明度
         const graphics = emptyBlock.getChildAt(0) as PIXI.Graphics;
         graphics.clear();
-        graphics.beginFill(0x808080, 0.1);
+        graphics.beginFill(0x808080, 0.3);
         graphics.drawRoundedRect(0, 0, BLOCK_SIZE, BLOCK_SIZE, 4);
         graphics.endFill();
 
@@ -1022,7 +908,7 @@ export class Game {
         for (let i = this.particles.length - 1; i >= 0; i--) {
             const particle = this.particles[i];
             particle.life -= 0.025 * delta; // 加快生命消耗
-            
+
             if (particle.life <= 0) {
                 if (particle.sprite.parent) {
                     particle.sprite.parent.removeChild(particle.sprite);
@@ -1031,20 +917,20 @@ export class Game {
                 this.particles.splice(i, 1);
                 continue;
             }
-            
+
             // 更新位置，添加曲线运动
             particle.sprite.x += particle.vx * delta * 1.2; // 加快水平移动
             particle.sprite.y += particle.vy * delta * 1.2; // 加快垂直移动
             particle.sprite.x += particle.curve * Math.sin(particle.life * 8) * delta; // 加快曲线频率
             particle.vy += 0.2 * delta; // 增加重力效果
-            
+
             // 旋转效果
             particle.sprite.rotation += particle.rotation * delta * 1.2;
-            
+
             // 使用生命值比例来创建更平滑的缩放和透明度过渡
             const lifeRatio = particle.life / particle.maxLife;
             const easeRatio = this.easeOutQuad(lifeRatio);
-            
+
             particle.sprite.alpha = easeRatio;
             particle.sprite.scale.set(easeRatio * 0.8);
         }
@@ -1059,7 +945,7 @@ export class Game {
     private createParticleEffect(x: number, y: number, color: number): void {
         const particleCount = 25; // 减少粒子数量以提高性能
         const glowColor = color;
-        
+
         // 创建爆炸波
         const blast = new PIXI.Graphics();
         blast.beginFill(color, 0.3);
@@ -1090,7 +976,7 @@ export class Game {
 
         for (let i = 0; i < particleCount; i++) {
             const particle = new PIXI.Graphics();
-            
+
             // 随机选择粒子形状
             const shapeType = Math.random();
             if (shapeType < 0.3) {
@@ -1129,17 +1015,17 @@ export class Game {
                 particle.closePath();
                 particle.endFill();
             }
-            
+
             particle.x = x;
             particle.y = y;
-            
+
             // 创建更快的运动轨迹
             const angle = (Math.random() * Math.PI * 2);
             const speed = 3 + Math.random() * 5; // 增加速度
             const curve = (Math.random() - 0.5) * 3; // 增加曲线幅度
             const scale = 0.5 + Math.random() * 0.8;
             particle.scale.set(scale);
-            
+
             const particle_obj = {
                 sprite: particle,
                 vx: Math.cos(angle) * speed,
@@ -1149,7 +1035,7 @@ export class Game {
                 life: 0.8 + Math.random() * 0.4, // 减少生命周期
                 maxLife: 0.8 + Math.random() * 0.4
             };
-            
+
             this.particles.push(particle_obj);
             this.particleContainer.addChild(particle);
         }
@@ -1168,12 +1054,12 @@ export class Game {
         const step = Math.PI * 2 / points;
         const halfStep = step / 2;
         const start = -Math.PI / 2;
-        
+
         graphics.moveTo(
             x + Math.cos(start) * radius,
             y + Math.sin(start) * radius
         );
-        
+
         for (let i = 1; i <= points * 2; i++) {
             const r = i % 2 === 0 ? radius : innerRadius;
             const angle = start + (i * halfStep);
@@ -1203,7 +1089,7 @@ export class Game {
         ];
 
         graphics.moveTo(bezierPoints[0].x, bezierPoints[0].y);
-        
+
         for (let i = 0; i < bezierPoints.length - 2; i += 2) {
             const xc = (bezierPoints[i + 1].x + bezierPoints[i + 2].x) / 2;
             const yc = (bezierPoints[i + 1].y + bezierPoints[i + 2].y) / 2;
@@ -1214,7 +1100,7 @@ export class Game {
                 yc
             );
         }
-        
+
         graphics.closePath();
     }
 
@@ -1274,232 +1160,52 @@ export class Game {
     }
 
     /**
-     * 寻找最佳移动位置
-     * @param shape - 要放置的形状
-     * @returns 返回最佳的放置位置和得分
-     */
-    private findBestMove(shape: Shape): { row: number; col: number; score: number } {
-        let bestScore = -Infinity;
-        let bestRow = 0;
-        let bestCol = 0;
-        let foundValidMove = false;
-
-        // 遍历所有可能的位置
-        for (let row = 0; row < GRID_SIZE; row++) {
-            for (let col = 0; col < GRID_SIZE; col++) {
-                if (this.canPlaceShape(row, col, shape)) {
-                    foundValidMove = true;
-                    let score = 0;
-                    
-                    // 检查放置后是否能消除行或列
-                    let wouldClearLines = 0;
-                    let wouldCreateGaps = 0;
-                    
-                    // 模拟放置并检查结果
-                    const simulatedBoard = this.simulatePlacement(row, col, shape);
-                    
-                    // 检查行
-                    for (let r = 0; r < GRID_SIZE; r++) {
-                        let rowBlocks = 0;
-                        let rowGaps = 0;
-                        let lastWasEmpty = false;
-                        
-                        for (let c = 0; c < GRID_SIZE; c++) {
-                            if (!simulatedBoard[r][c]) {
-                                if (!lastWasEmpty && rowBlocks > 0) {
-                                    rowGaps++;
-                                }
-                                lastWasEmpty = true;
-                            } else {
-                                rowBlocks++;
-                                lastWasEmpty = false;
-                            }
-                        }
-                        
-                        if (rowBlocks === GRID_SIZE) {
-                            wouldClearLines++;
-                        }
-                        wouldCreateGaps += rowGaps;
-                    }
-                    
-                    // 检查列
-                    for (let c = 0; c < GRID_SIZE; c++) {
-                        let colBlocks = 0;
-                        let colGaps = 0;
-                        let lastWasEmpty = false;
-                        
-                        for (let r = 0; r < GRID_SIZE; r++) {
-                            if (!simulatedBoard[r][c]) {
-                                if (!lastWasEmpty && colBlocks > 0) {
-                                    colGaps++;
-                                }
-                                lastWasEmpty = true;
-                            } else {
-                                colBlocks++;
-                                lastWasEmpty = false;
-                            }
-                        }
-                        
-                        if (colBlocks === GRID_SIZE) {
-                            wouldClearLines++;
-                        }
-                        wouldCreateGaps += colGaps;
-                    }
-                    
-                    // 基础分数计算
-                    score += wouldClearLines * 1000;  // 大幅提高消除行/列的权重
-                    score -= wouldCreateGaps * 50;    // 惩罚创建空隙
-                    
-                    // 计算与已有方块的接触面
-                    let touchingBlocks = 0;
-                    let touchingEdges = 0;
-                    
-                    for (let r = 0; r < shape.blocks.length; r++) {
-                        for (let c = 0; c < shape.blocks[r].length; c++) {
-                            if (shape.blocks[r][c]) {
-                                const boardRow = row + r;
-                                const boardCol = col + c;
-                                
-                                // 检查四个方向
-                                const directions = [[-1,0], [1,0], [0,-1], [0,1]];
-                                for (const [dr, dc] of directions) {
-                                    const newRow = boardRow + dr;
-                                    const newCol = boardCol + dc;
-                                    
-                                    if (newRow >= 0 && newRow < GRID_SIZE && 
-                                        newCol >= 0 && newCol < GRID_SIZE) {
-                                        if (!this.gameBoard[newRow][newCol].isEmpty) {
-                                            touchingBlocks++;
-                                        }
-                                    } else {
-                                        touchingEdges++;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    score += touchingBlocks * 100;   // 提高相邻方块的权重
-                    score -= touchingEdges * 30;     // 轻微惩罚靠边
-                    
-                    // 优先选择底部位置
-                    score += (GRID_SIZE - row) * 20;
-                    
-                    // 如果这个位置能立即消除，给予额外奖励
-                    if (wouldClearLines > 0) {
-                        score += 2000;  // 额外奖励
-                    }
-
-                    if (score > bestScore) {
-                        bestScore = score;
-                        bestRow = row;
-                        bestCol = col;
-                    }
-                }
-            }
-        }
-
-        // 如果找不到有效移动，返回特殊值
-        if (!foundValidMove) {
-            return { row: -1, col: -1, score: -Infinity };
-        }
-
-        return { row: bestRow, col: bestCol, score: bestScore };
-    }
-
-    /**
-     * 模拟形状放置
-     * @param row - 目标行
-     * @param col - 目标列
-     * @param shape - 要放置的形状
-     * @returns 返回模拟后的游戏板状态
-     */
-    private simulatePlacement(row: number, col: number, shape: Shape): boolean[][] {
-        const board: boolean[][] = Array(GRID_SIZE).fill(0).map(() => 
-            Array(GRID_SIZE).fill(false)
-        );
-        
-        // 复制当前棋盘状态
-        for (let r = 0; r < GRID_SIZE; r++) {
-            for (let c = 0; c < GRID_SIZE; c++) {
-                board[r][c] = !this.gameBoard[r][c].isEmpty;
-            }
-        }
-        
-        // 模拟放置新形状
-        for (let r = 0; r < shape.blocks.length; r++) {
-            for (let c = 0; c < shape.blocks[r].length; c++) {
-                if (shape.blocks[r][c]) {
-                    board[row + r][col + c] = true;
-                }
-            }
-        }
-        
-        return board;
-    }
-
-    /**
      * 运行AI逻辑
      * 自动寻找并执行最佳移动
      */
     private async runAI(): Promise<void> {
         if (!this.state.isAIEnabled || this.state.isGameOver || this.state.currentState !== 'PLAYING') return;
 
-        // 找到最佳移动
-        let bestShape = null;
-        let bestMove = { row: -1, col: -1, score: -Infinity };
+        const success = await this.gameAI.executeMove(
+            this.state.shapes,
+            this.canPlaceShape.bind(this),
+            (row: number, col: number, shape: Shape) => {
+                this.placeShape(row, col, shape);
+                this.checkLines();
 
-        for (const shape of this.state.shapes) {
-            const move = this.findBestMove(shape);
-            if (move.score > bestMove.score) {
-                bestMove = move;
-                bestShape = shape;
+                // 移除已放置的形状
+                const index = this.state.shapes.indexOf(shape);
+                if (index > -1) {
+                    this.state.shapes.splice(index, 1);
+                    this.shapeContainer.removeChild(shape.container);
+                }
+
+                // 如果所有形状都已放置或没有剩余形状，生成新的形状
+                if (this.state.shapes.length === 0) {
+                    this.generateNewShapes();
+                }
             }
-        }
+        );
 
-        if (bestShape && bestMove.score > -Infinity) {
-            // 等待0.15秒
-            await new Promise(resolve => setTimeout(resolve, 150));
-            // 再次检查AI是否仍然启用
-            if (!this.state.isAIEnabled || this.state.currentState !== 'PLAYING') return;
-
-            // 计算目标位置
-            const targetX = bestMove.col * BLOCK_SIZE + BOARD_OFFSET_X;
-            const targetY = bestMove.row * BLOCK_SIZE + BOARD_OFFSET_Y;
-
-            // 创建移动动画
-            await new Promise<void>(resolve => {
-                gsap.to(bestShape.container, {
-                    x: targetX,
-                    y: targetY,
-                    duration: 0.5,
-                    ease: "power2.out",
-                    onComplete: resolve
-                });
-            });
-
-            // 放置形状
-            this.placeShape(bestMove.row, bestMove.col, bestShape);
-            this.checkLines();
-            
-            // 移除已放置的形状
-            const index = this.state.shapes.indexOf(bestShape);
-            if (index > -1) {
-                this.state.shapes.splice(index, 1);
-                this.shapeContainer.removeChild(bestShape.container);
-            }
-
-            // 如果所有形状都已放置或没有剩余形状，生成新的形状
-            if (this.state.shapes.length === 0) {
-                this.generateNewShapes();
-            }
-
-            // 继续运行AI
-            this.runAI();
-        } else {
+        if (!success) {
             // 如果找不到有效移动，生成新的形状
             this.generateNewShapes();
-            this.runAI();
         }
+
+        // 继续运行AI
+        this.runAI();
+    }
+
+    /**
+     * 创建设置按钮
+     */
+    private createSettingsButton(): void {
+        const settingsButton = new SettingsButton(20, 20, () => {
+            this.state.previousAIState = this.state.isAIEnabled;
+            this.state.isAIEnabled = false; // 暂停AI
+            this.state.currentState = 'PAUSED';
+            this.pauseScreen.show();
+        });
+        this.uiContainer.addChild(settingsButton);
     }
 } 
