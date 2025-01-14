@@ -6,7 +6,8 @@ module.exports = {
   entry: './src/index.ts',
   output: {
     path: path.resolve(__dirname, 'dist'),
-    filename: 'bundle.js',
+    filename: 'bundle.[contenthash].js',
+    clean: true
   },
   module: {
     rules: [
@@ -15,6 +16,10 @@ module.exports = {
         use: 'ts-loader',
         exclude: /node_modules/,
       },
+      {
+        test: /\.(png|svg|jpg|jpeg|gif)$/i,
+        type: 'asset/resource',
+      }
     ],
   },
   resolve: {
@@ -22,15 +27,12 @@ module.exports = {
   },
   plugins: [
     new HtmlWebpackPlugin({
-      template: './src/index.html',
+      template: 'src/index.html',
+      filename: 'index.html'
     }),
     new CopyWebpackPlugin({
       patterns: [
-        { 
-          from: 'src/assets', 
-          to: 'assets',
-          noErrorOnMissing: true 
-        }
+        { from: "src/assets", to: "assets" }
       ],
     }),
   ],
@@ -40,5 +42,6 @@ module.exports = {
     },
     compress: true,
     port: 9000,
+    hot: true
   },
 };
